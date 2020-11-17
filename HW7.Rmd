@@ -1,0 +1,232 @@
+---
+title: "HW 7"
+author: "Alejandro Sanchez"
+date: "11/16/2020"
+output: html_document
+---
+
+```{r}
+load("C:/Users/alejo/Desktop/Econometrics/ecob2000_lecture1/NHIS_2014.RData")
+data_use1$earn_lastyr <- as.factor(data_use1$ERNYR_P)
+levels(data_use1$earn_lastyr) <- c("0","$01-$4999","$5000-$9999","$10000-$14999","$15000-$19999","$20000-$24999","$25000-$34999","$35000-$44999","$45000-$54999","$55000-$64999","$65000-$74999","$75000 and over",NA,NA,NA)
+```
+
+```{r}
+attach(data_use1)
+use_varb <-  (AGE_P>24)  
+dat_use <- subset(data_use1,use_varb)
+detach()
+```
+
+I chose to have the age start at 24 because I think that's the age when children who were on their parent's insurance are starting to transition to their own insurance since they are now entering the labor force where they could get insurance from the companies that they choose to work for. Also for children who were not insured under their parent's plan for whatever reason, this gives them the opportunity to finally get insured. 
+
+```{r}
+d_region <- data.frame(model.matrix(~ dat_use$REGION))
+d_region_born <- data.frame(model.matrix(~ factor(dat_use$region_born)))
+d_PH <- data.frame((model.matrix(~factor(dat_use$person_healthstatus))))
+```
+
+
+```{R}
+model_logit1 <- glm(NOTCOV ~ AGE_P + I(AGE_P^2) + female + AfAm + Asian + RaceOther  
+                    + Hispanic + educ_hs + educ_smcoll + educ_as + educ_bach + educ_adv 
+                    + married + widowed + divorc_sep + veteran_stat + REGION + region_born,
+                    family = binomial, data = data_use1)
+d_region <- data.frame(model.matrix(~ data_use1$REGION))
+d_region_born <- data.frame(model.matrix(~ factor(data_use1$region_born)))  # snips any with zero in the subgroup
+dat_for_analysis_sub <- data.frame(
+  data_use1$NOTCOV,
+  data_use1$AGE_P,
+  data_use1$female,
+  data_use1$AfAm,
+  data_use1$Asian,
+  data_use1$RaceOther,
+  data_use1$Hispanic,
+  data_use1$educ_hs,
+  data_use1$educ_smcoll,
+  data_use1$educ_as,
+  data_use1$educ_bach,
+  data_use1$educ_adv,
+  data_use1$married,
+  data_use1$widowed,
+  data_use1$divorc_sep,
+  d_region[,2:4],
+  d_region_born[,2:12]) 
+names(dat_for_analysis_sub) <- c("NOTCOV",
+                                 "Age",
+                                 "female",
+                                 "AfAm",
+                                 "Asian",
+                                 "RaceOther",
+                                 "Hispanic",
+                                 "educ_hs",
+                                 "educ_smcoll",
+                                 "educ_as",
+                                 "educ_bach",
+                                 "educ_adv",
+                                 "married",
+                                 "widowed",
+                                 "divorc_sep",
+                                 "Region.Midwest",
+                                 "Region.South",
+                                 "Region.West",
+                                 "born.Mex.CentAm.Carib",
+                                 "born.S.Am",
+                                 "born.Eur",
+                                 "born.f.USSR",
+                                 "born.Africa",
+                                 "born.MidE",
+                                 "born.India.subc",
+                                 "born.Asia",
+                                 "born.SE.Asia",
+                                 "born.elsewhere",
+                                 "born.unknown")
+```
+
+```{R}
+require("standardize")
+set.seed(654321)
+NN <- length(dat_for_analysis_sub$NOTCOV)
+# restrict_1 <- as.logical(round(runif(NN,min=0,max=0.6))) # use fraction as training data
+restrict_1 <- (runif(NN) < 0.1) # use 10% as training data
+summary(restrict_1)
+dat_train <- subset(dat_for_analysis_sub, restrict_1)
+dat_test <- subset(dat_for_analysis_sub, !restrict_1)
+sobj <- standardize(NOTCOV ~ Age + female + AfAm + Asian + RaceOther + Hispanic + 
+                      educ_hs + educ_smcoll + educ_as + educ_bach + educ_adv + 
+                      married + widowed + divorc_sep + 
+                      Region.Midwest + Region.South + Region.West + 
+                      born.Mex.CentAm.Carib + born.S.Am + born.Eur + born.f.USSR + 
+                      born.Africa + born.MidE + born.India.subc + born.Asia + 
+                      born.SE.Asia + born.elsewhere + born.unknown, dat_train, family = binomial)
+
+s_dat_test <- predict(sobj, dat_test)
+```
+This model predicts how many people above the age of 24 are covered and how many aren't. The prediction is that 100,870 people are covered and 11,183 people are not. 
+
+```{r}
+model_lpm1 <- lm(sobj$formula, data = sobj$data)
+summary(model_lpm1)
+pred_vals_lpm <- predict(model_lpm1, s_dat_test)
+pred_model_lpm1 <- (pred_vals_lpm > 0.5)
+table(pred = pred_model_lpm1, true = dat_test$NOTCOV)
+```
+here we see a matrix where we see the predictions of how many people are covered and not covered and how many of these predictions were accurate and how many were not.
+
+```{R}
+12157/(88187+12157)
+```
+We see that the Percentage of error in the predicting of insured individulas is about 12.12%
+
+```{R}
+265/(261+265)
+```
+
+The percentage of error when predicting not insured individuals is much higher in this model with a error of approximately 50.38%
+
+```{r}
+model_logit1 <- glm(sobj$formula, family = binomial, data = sobj$data)
+summary(model_logit1)
+pred_vals <- predict(model_logit1, s_dat_test, type = "response")
+pred_model_logit1 <- (pred_vals > 0.5)
+table(pred = pred_model_logit1, true = dat_test$NOTCOV)
+```
+For the Logit model we see the model predict that there are 87,299 people who are insured and 1,149.
+
+```{R}
+11181/(87299+11181)
+```
+
+The percentage of error for people who are insured is roughly 11.35%
+
+```{R}
+1149/(1149+1241)
+```
+
+the percentage of error for people who are not insured in about 48.08% which is slightly than the error we got from the previous model. This means it was slightly better at predicting this time. 
+
+```{r}
+require('randomForest')
+set.seed(54321)
+model_randFor <- randomForest(as.factor(NOTCOV) ~ ., data = sobj$data, importance=TRUE, proximity=TRUE)
+print(model_randFor)
+round(importance(model_randFor),2)
+varImpPlot(model_randFor)
+# look at confusion matrix for this too
+pred_model1 <- predict(model_randFor,  s_dat_test)
+table(pred = pred_model1, true = dat_test$NOTCOV)
+```
+
+From the results of this prediction we see that there were a total of 87,844 insured people and 1,247 uninsured individuals. 
+
+```{r}
+11175/(87844+22275)
+```
+The percentage of error in this model is about 10.15% for insured individuals and so far this has been the best at prediciting who is insured because it has had the lowest amount of error. 
+
+```{R}
+604/(1247+604)
+```
+
+The percentage of error for not insured individulas is about 32.63%. This is also the lowest error percentage which makes this model the most accurate so far. 
+```{R}
+require(e1071)
+# tuned_parameters <- tune.svm(as.factor(NOTCOV) ~ ., data = sobj$data, gamma = 10^(-3:0), cost = 10^(-2:1)) 
+# summary(tuned_parameters)
+# figure best parameters and input into next
+svm.model <- svm(as.factor(NOTCOV) ~ ., data = sobj$data, cost = 10, gamma = 0.1)
+svm.pred <- predict(svm.model, s_dat_test)
+table(pred = svm.pred, true = dat_test$NOTCOV)
+```
+This model predicts a total of 86,565 individuals are insured and a total of 1,990 uninsured individuals. 
+
+```{R}
+10432/(86565+10432)
+```
+The percentage error for insured individauls on this model is about 10.75%. This is a higher error rate tan the previous one but not by much. It's less than 1%
+
+```{R}
+1990/(1883+1990)
+```
+
+The percentage of error for predicting not insured individuals is at a 51.38% this is the highest error percentage so far. So far the previous model has been the most accurate one.
+
+```{r}
+require(glmnet)
+model1_elasticnet <-  glmnet(as.matrix(sobj$data[,-1]),sobj$data$NOTCOV) 
+par(mar=c(4.5,4.5,1,4))
+plot(model1_elasticnet)
+vnat=coef(model1_elasticnet)
+vnat=vnat[-1,ncol(vnat)] # remove the intercept, and get the coefficients at the end of the path
+axis(4, at=vnat,line=-.5,label=names(sobj$data[,-1]),las=1,tick=FALSE, cex.axis=0.5) 
+
+plot(model1_elasticnet, xvar = "lambda")
+plot(model1_elasticnet, xvar = "dev", label = TRUE)
+print(model1_elasticnet)
+
+cvmodel1_elasticnet = cv.glmnet(data.matrix(sobj$data[,-1]),data.matrix(sobj$data$NOTCOV)) 
+cvmodel1_elasticnet$lambda.min
+log(cvmodel1_elasticnet$lambda.min)
+coef(cvmodel1_elasticnet, s = "lambda.min")
+
+pred1_elasnet <- predict(model1_elasticnet, newx = data.matrix(s_dat_test), s = cvmodel1_elasticnet$lambda.min)
+pred_model1_elasnet <- (pred1_elasnet < mean(pred1_elasnet)) 
+table(pred = pred_model1_elasnet, true = dat_test$NOTCOV)
+
+model2_elasticnet <-  glmnet(as.matrix(sobj$data[,-1]),sobj$data$NOTCOV, alpha = 0) 
+```
+
+In this model we see that the predicted amount of insured people is 60,246 and a total 8,055 uninsured people. 
+
+```{R}
+4367/(60246+4367)
+```
+The percentage of error for insured individuals is a 6.76%. This by far has been the most accurate at predicting insured individuals. 
+
+```{R}
+28202/(8055+28202)
+```
+The percentage of error when predicting uninsured individuals is a 77.78%. This was the worst percentage error rate out of all the models that were predicting uninsured individuals. 
+
+
+Overall the most accurate predictor model was the randomForest model with the lowest error percentages in predicting both individuals covered by insurance and those who were not covered. 
